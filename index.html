@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Generate a random 6- or 7-card Grand Archive TCG starting hand from a pasted Silvie decklist."
+    >
+    <title>First Hand TCG - Grand Archive Starting Hand Generator</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">First Hand TCG</p>
+        <h1 id="page-title">Grand Archive starting hand generator</h1>
+        <p class="hero-copy">
+          Paste a decklist exported from Silvie, choose 6 or 7 cards, and generate a
+          randomized opening hand from your main deck.
+        </p>
+      </section>
+
+      <section class="card app-grid" aria-label="Starting hand generator">
+        <div class="input-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Paste your decklist</h2>
+              <p>
+                Silvie exports with <code># Main Deck</code> and <code># Material Deck</code>
+                are supported. Material and sideboard cards are ignored.
+              </p>
+            </div>
+            <button class="button button-secondary" id="load-sample" type="button">
+              Load sample
+            </button>
+          </div>
+
+          <label class="sr-only" for="decklist">Decklist</label>
+          <textarea
+            id="decklist"
+            spellcheck="false"
+            placeholder="# Main Deck&#10;4 Card Name&#10;3 Another Card&#10;&#10;# Material Deck&#10;1 Champion Name"
+          ></textarea>
+
+          <div class="toolbar">
+            <fieldset class="hand-size">
+              <legend>Starting hand size</legend>
+              <label>
+                <input type="radio" name="hand-size" value="7" checked>
+                <span>7 cards</span>
+              </label>
+              <label>
+                <input type="radio" name="hand-size" value="6">
+                <span>6 cards</span>
+              </label>
+            </fieldset>
+
+            <div class="actions">
+              <button class="button button-secondary" id="clear-decklist" type="button">
+                Clear
+              </button>
+              <button class="button button-primary" id="generate-hand" type="button" disabled>
+                Generate hand
+              </button>
+            </div>
+          </div>
+
+          <p class="deck-summary" id="deck-summary" aria-live="polite"></p>
+          <div class="feedback" id="feedback" aria-live="polite" hidden></div>
+        </div>
+
+        <aside class="result-panel" aria-labelledby="result-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="result-title">Your starting hand</h2>
+              <p id="hand-details">Generate a hand to see cards here.</p>
+            </div>
+            <button class="button button-secondary" id="copy-hand" type="button" disabled>
+              Copy hand
+            </button>
+          </div>
+
+          <div class="empty-state" id="hand-result" hidden>
+            <ol class="hand-list" id="hand-list"></ol>
+          </div>
+
+          <div class="tips">
+            <h3>Decklist format</h3>
+            <p>
+              Use lines like <code>4 Sable Remnant</code>, <code>4x Sable Remnant</code>,
+              or <code>Sable Remnant x4</code>.
+            </p>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>
