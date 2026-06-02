@@ -1,0 +1,10 @@
+{
+  "name": "firsthand-tcg",
+  "version": "1.0.0",
+  "description": "Grand Archive TCG starting hand generator",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "private": true
+}
