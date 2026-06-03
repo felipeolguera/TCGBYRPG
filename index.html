@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grand Archive Deck Explainer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero__content">
+        <p class="eyebrow">Grand Archive TCG</p>
+        <h1>Deck Explainer</h1>
+        <p>
+          Paste a decklist to fetch card data from the Grand Archive API, read
+          what every card does, and get a strategy guide for the full deck.
+        </p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel input-panel" aria-labelledby="deck-input-title">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h2 id="deck-input-title">Paste your decklist</h2>
+          </div>
+          <button id="load-example" class="secondary" type="button">
+            Load example
+          </button>
+        </div>
+        <textarea
+          id="deck-input"
+          spellcheck="false"
+          aria-label="Decklist input"
+        ></textarea>
+        <div class="actions">
+          <button id="analyze" type="button">Analyze deck</button>
+          <button id="clear" class="secondary" type="button">Clear</button>
+        </div>
+        <p class="hint">
+          Supports section headings like <code># Material Deck</code> and card
+          lines like <code>4 Fairy Whispers</code>.
+        </p>
+      </section>
+
+      <section class="panel results-panel" aria-live="polite">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">Step 2</p>
+            <h2>Results</h2>
+          </div>
+          <span id="status" class="status">Ready</span>
+        </div>
+        <div id="results" class="results empty-state">
+          <h3>Paste a decklist and click Analyze deck.</h3>
+          <p>
+            The app will identify cards, call <code>api.gatcg.com</code>, and
+            organize each card into an easy-to-read explanation.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <template id="card-template">
+      <article class="card">
+        <div class="card__header">
+          <div>
+            <h4></h4>
+            <p class="meta"></p>
+          </div>
+          <span class="quantity"></span>
+        </div>
+        <dl class="stats"></dl>
+        <p class="role"></p>
+        <details>
+          <summary>Rules text</summary>
+          <p class="rules"></p>
+        </details>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
