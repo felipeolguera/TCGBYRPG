@@ -81,6 +81,8 @@ analyzeButton.addEventListener("click", () => {
     }
 
     console.error(error);
+    setBusy(false);
+    state.abortController = null;
     setStatus("Error", "error");
     resultsElement.className = "results";
     resultsElement.innerHTML = `
@@ -302,6 +304,10 @@ function renderStrategy(deck, activeChampion) {
   const totalMaterial = cards
     .filter((entry) => entry.section === "Material Deck")
     .reduce((total, entry) => total + entry.quantity, 0);
+  const championName = activeChampion?.name || "not detected";
+  const championClassLabel = activeChampion
+    ? ` (${(activeChampion.classes || []).join(", ") || "no class"})`
+    : "";
 
   const wrapper = document.createElement("div");
   wrapper.className = "summary";
@@ -310,7 +316,7 @@ function renderStrategy(deck, activeChampion) {
       <h3>Deck read</h3>
       <ul>
         <li><strong>${totalMaterial}</strong> material cards and <strong>${totalMain}</strong> main/side cards were found.</li>
-        <li>Active champion: <strong>${escapeHtml(activeChampion?.name || "not detected")}</strong>${activeChampion ? ` (${escapeHtml((activeChampion.classes || []).join(", ") || "no class"))})` : ""}.</li>
+        <li>Active champion: <strong>${escapeHtml(championName)}</strong>${escapeHtml(championClassLabel)}.</li>
         ${strategyItems.map((item) => `<li>${item}</li>`).join("")}
       </ul>
     </div>
