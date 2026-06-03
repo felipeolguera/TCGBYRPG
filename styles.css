@@ -275,11 +275,59 @@ code {
   background: rgba(16, 23, 37, 0.74);
 }
 
+.card__body {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.card__content {
+  min-width: 0;
+}
+
 .card__header {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.thumbnail {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(135deg, rgba(139, 220, 157, 0.14), rgba(40, 49, 73, 0.8)),
+    var(--panel-strong);
+  aspect-ratio: 5 / 7;
+}
+
+.thumbnail::before {
+  content: "No image";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.thumbnail img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumbnail img[src=""],
+.thumbnail img:not([src]) {
+  display: none;
 }
 
 .card h4 {
@@ -288,7 +336,6 @@ code {
 }
 
 .meta,
-.role,
 .rules {
   color: var(--muted);
   line-height: 1.55;
@@ -332,6 +379,25 @@ code {
   margin: 0;
 }
 
+.insights {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 0.9rem;
+}
+
+.insight {
+  border-left: 3px solid rgba(139, 220, 157, 0.6);
+  padding-left: 0.75rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.insight strong {
+  display: block;
+  margin-bottom: 0.12rem;
+  color: var(--text);
+}
+
 details {
   border-top: 1px solid var(--line);
   padding-top: 0.75rem;
@@ -363,5 +429,19 @@ summary {
 
   .input-panel {
     position: static;
+  }
+
+  .card__body {
+    grid-template-columns: 5.5rem 1fr;
+  }
+}
+
+@media (max-width: 34rem) {
+  .card__body {
+    grid-template-columns: 1fr;
+  }
+
+  .thumbnail {
+    width: min(11rem, 58vw);
   }
 }
