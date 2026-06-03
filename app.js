@@ -119,11 +119,12 @@ async function analyzeDeck() {
 
   for (const [index, cardEntry] of parsedDeck.cards.entries()) {
     setStatus(`Fetching ${index + 1}/${parsedDeck.cards.length}: ${cardEntry.name}`, "loading");
-    const card = await findCard(cardEntry.name, state.abortController.signal);
+    const lookup = await findCard(cardEntry.name, state.abortController.signal);
     enrichedCards.push({
       ...cardEntry,
-      card,
-      error: card ? null : `Could not find "${cardEntry.name}"`,
+      card: lookup.card,
+      suggestions: lookup.suggestions,
+      error: lookup.error,
     });
   }
 
@@ -173,7 +174,7 @@ function parseDeckList(input) {
       }
 
       const quantity = Number(cardMatch[1] || 1);
-      const name = cardMatch[2].replace(/\s+#.*$/, "").trim();
+      const name = cleanDeckCardName(cardMatch[2]);
 
       if (!name) {
         return;
@@ -209,8 +210,29 @@ function normalizeSectionName(name) {
   return cleanName || "Main Deck";
 }
 
+function cleanDeckCardName(rawName) {
+  return rawName
+    .replace(/\s+#.*$/, "")
+    .replace(/\s+\[[^\]]+\]\s*$/, "")
+    .replace(/\s+\([A-Z0-9-]{2,}\)\s*(?:#?\d+[A-Z]?)?\s*$/i, "")
+    .replace(/\s+[A-Z0-9-]{2,}-\d+[A-Z]?\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeCardNameForMatch(name) {
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’‘`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 async function findCard(name, signal) {
-  const cacheKey = name.toLowerCase();
+  const cacheKey = normalizeCardNameForMatch(name);
 
   if (state.cardCache.has(cacheKey)) {
     return state.cardCache.get(cacheKey);
@@ -220,20 +242,34 @@ async function findCard(name, signal) {
   const matches = await fetchJson(autocompleteUrl, signal);
 
   if (!Array.isArray(matches) || matches.length === 0) {
-    state.cardCache.set(cacheKey, null);
-    return null;
+    const miss = {
+      card: null,
+      suggestions: [],
+      error: `No API results matched "${name}".`,
+    };
+    state.cardCache.set(cacheKey, miss);
+    return miss;
   }
 
-  const lowerName = name.toLowerCase();
-  const match =
-    matches.find((item) => item.name.toLowerCase() === lowerName) ||
-    matches.find((item) => item.name.toLowerCase().includes(lowerName)) ||
-    matches[0];
+  const normalizedName = normalizeCardNameForMatch(name);
+  const exactMatches = matches.filter((item) => normalizeCardNameForMatch(item.name) === normalizedName);
+  const match = exactMatches[0];
+
+  if (!match) {
+    const miss = {
+      card: null,
+      suggestions: matches.slice(0, 5).map((item) => item.name),
+      error: `No exact card-name match for "${name}".`,
+    };
+    state.cardCache.set(cacheKey, miss);
+    return miss;
+  }
 
   const cardUrl = `${API_BASE_URL}/cards/${encodeURIComponent(match.slug)}`;
   const card = await fetchJson(cardUrl, signal);
-  state.cardCache.set(cacheKey, card);
-  return card;
+  const hit = { card, suggestions: [], error: null };
+  state.cardCache.set(cacheKey, hit);
+  return hit;
 }
 
 async function fetchJson(url, signal) {
@@ -266,7 +302,7 @@ function renderResults(deck) {
   if (missingCards.length > 0) {
     const notice = document.createElement("div");
     notice.className = "notice";
-    notice.textContent = `Could not find: ${missingCards.map((entry) => entry.name).join(", ")}`;
+    notice.textContent = `Needs review: ${missingCards.map((entry) => entry.name).join(", ")}. These cards were not exact API matches, so the app did not guess.`;
     fragment.appendChild(notice);
   }
 
@@ -342,30 +378,41 @@ function buildStrategyItems(entries, activeChampion) {
   }
 
   if (keywordCounts.distant || keywordCounts.ranged) {
-    items.push("Core plan: make Ranger allies <strong>distant</strong>, then attack while their <strong>Ranged</strong> bonuses are active.");
+    items.push(`Detected <strong>distant/Ranged</strong> text on ${keywordCounts.distant + keywordCounts.ranged} card copies, including ${escapeHtml(exampleCardsWithText(entries, ["distant", "ranged"]))}. Read each card's exact condition before counting a Ranged bonus.`);
   }
 
   if (keywordCounts.wake) {
-    items.push("Use wake-up effects after a strong attack or after defending so your best ally can act again.");
+    items.push(`Detected <strong>wake up</strong> text on ${keywordCounts.wake} card copies, including ${escapeHtml(exampleCardsWithText(entries, ["wake up"]))}. Use those after the target has already rested, attacked, defended, or used a rest ability.`);
   }
 
   if (keywordCounts.suppress) {
-    items.push("Use suppress effects as tempo tools to remove blockers, weapons, or regalia for the turn you want to push damage.");
+    items.push(`Detected <strong>suppress</strong> text on ${keywordCounts.suppress} card copies, including ${escapeHtml(exampleCardsWithText(entries, ["suppress"]))}. Choose the target that changes the current turn the most.`);
   }
 
   if (keywordCounts.negate || keywordCounts.spellshroud || keywordCounts.stealth) {
-    items.push("Hold protection for the turns where a key ally is carrying your damage plan; preventing one answer can convert into multiple attacks.");
+    items.push(`Detected interaction/protection text on cards like ${escapeHtml(exampleCardsWithText(entries, ["negate", "spellshroud", "stealth"]))}. Hold the required reserve until the exact printed protection or negate line can matter.`);
   }
 
   if (keywordCounts.glimpse || keywordCounts.draw) {
-    items.push("Your card selection and draw effects help find the right mix of ally, distance enabler, and protection.");
+    items.push(`Detected card-flow text on cards like ${escapeHtml(exampleCardsWithText(entries, ["glimpse", "draw"]))}. Use those effects before committing to a line so your decisions use the extra information.`);
   }
 
   if (items.length === 0) {
-    items.push("Play to the cards that create repeatable pressure, then save reactions for the opponent's highest-impact turns.");
+    items.push("No strong repeated keywords were detected. Use the individual card panels below: each one quotes the exact printed text used for its advice.");
   }
 
   return items;
+}
+
+function exampleCardsWithText(entries, keywords) {
+  const examples = entries
+    .filter((entry) => {
+      const text = `${entry.card?.effect_raw || ""} ${entry.card?.name || ""}`.toLowerCase();
+      return keywords.some((keyword) => text.includes(keyword));
+    })
+    .map((entry) => entry.card.name);
+
+  return unique(examples).slice(0, 3).join(", ") || "none";
 }
 
 function renderCard(entry, activeClasses) {
@@ -384,7 +431,10 @@ function renderCard(entry, activeClasses) {
     quantity.textContent = `x${entry.quantity}`;
     thumbnail.removeAttribute("src");
     thumbnail.alt = "";
-    insights.append(renderInsight("Lookup", entry.error));
+    const suggestionText = entry.suggestions?.length
+      ? ` Closest API suggestions: ${entry.suggestions.join(", ")}.`
+      : "";
+    insights.append(renderInsight("Lookup", `${entry.error}${suggestionText}`));
     rules.textContent = "";
     return node;
   }
@@ -474,7 +524,9 @@ function addStat(stats, label, value) {
 }
 
 function buildCardInsights(card, activeClasses) {
-  const effect = (card.effect_raw || "").toLowerCase();
+  const effectText = card.effect_raw || "";
+  const effect = effectText.toLowerCase();
+  const rulesLines = getRulesLines(effectText);
   const types = card.types || [];
   const subtypes = card.subtypes || [];
   const insights = [];
@@ -489,6 +541,12 @@ function buildCardInsights(card, activeClasses) {
       insights.push({ label, text });
     }
   };
+
+  if (rulesLines.length > 0) {
+    addInsight("Card text checked", `Using the printed text: "${truncateText(rulesLines.join(" / "), 220)}"`);
+  } else {
+    addInsight("Card text checked", "This card has no printed rules text in the API, so advice is based only on type line and stats.");
+  }
 
   if (isChampion) {
     addInsight(
@@ -505,102 +563,136 @@ function buildCardInsights(card, activeClasses) {
   }
 
   if (isRegalia) {
-    addInsight("Primary use", "Material deck tool you can choose when the matchup or current turn calls for its effect.");
+    addInsight("Primary use", "Material deck tool. Materialize it when its exact printed line below matters in the matchup or current turn.");
   }
 
   if (types.includes("ITEM") && !isRegalia) {
-    addInsight("Primary use", "Item that can sit on the field until the right turn to cash in its activated effect.");
+    addInsight("Primary use", "Item that can sit on the field until the right turn to use its printed activated or sacrifice effect.");
   }
 
   if (isAction) {
-    addInsight("Primary use", card.speed ? "Fast action you can hold up for combat, protection, or a surprise tempo swing." : "Proactive action for your own main turn.");
+    addInsight("Primary use", card.speed ? "Fast action. Hold reserve open when its printed text can change combat or stop an opposing play." : "Slow/proactive action. Plan to use it on your own turn around its printed target and cost.");
   }
 
-  if (effect.includes("ranged")) {
-    addInsight("Creative line", "Make this unit distant before attacks, then stack pump or wake effects so its Ranged bonus matters more than once.");
-  }
-
-  if (effect.includes("becomes distant")) {
-    addInsight("Creative line", "Use it on a Ranger before your attack step, or during the opponent's turn so the unit can survive combat and be distant for your next turn.");
-  }
-
-  if (effect.includes("wake up")) {
-    addInsight("Creative line", "After a distant ally attacks or rests for an ability, wake it to attack again, block, or reuse a key tap/rest effect.");
-  }
-
-  if (effect.includes("suppress")) {
-    addInsight("Creative line", "Suppress the object that blocks your best attack turn: a defender, a weapon, or a regalia piece that would answer your board.");
-  }
-
-  if (effect.includes("negate")) {
-    addInsight("Best timing", "Hold enough reserve for the opponent's highest-impact action, especially removal or a blowout combat trick.");
-  }
-
-  if (effect.includes("spellshroud") || effect.includes("stealth")) {
-    addInsight("Best timing", "Save this for the ally carrying your damage plan; protecting one distant threat can represent several attacks over two turns.");
-  }
-
-  if (effect.includes("glimpse") || effect.includes("draw")) {
-    addInsight("Creative line", "Use card flow before committing the turn so you can find the missing piece: ally, distance enabler, protection, or wake effect.");
-  }
-
-  if (effect.includes("banish") && effect.includes("graveyard")) {
-    addInsight("Best timing", "Do not fire graveyard hate too early; wait until it breaks up a recursion turn, element requirement, or graveyard payoff.");
-  }
-
-  if (effect.includes("glimpse") && effect.includes("reveal the top card")) {
-    addInsight("Creative line", "Stack a Wind card on top with glimpse, then reveal it immediately to turn the spell into real card advantage.");
-  }
-
-  if (effect.includes("banish target ally you control") && effect.includes("return it")) {
-    addInsight("Creative line", "Blink your ally to dodge removal, clear damage, or retrigger an On Enter effect; because it returns rested, pair it with wake effects when you still need to attack.");
-  }
-
-  if (effect.includes("whenever another unit you control becomes distant")) {
-    addInsight("Creative line", "Target another unit with your distant effect first so this card turns on for free and gives you a second attacker without spending another card.");
-  }
-
-  if (effect.includes("rest: suppress") || effect.includes("rest]**: suppress")) {
-    addInsight("Creative line", "Make this distant before using the rest ability, then consider waking it afterward so you still get pressure after the suppression.");
-  }
-
-  if (effect.includes("materialize a ranger regalia")) {
-    addInsight("Creative line", "Use this when Ranger Strides or another Ranger regalia is worth the random material banish; it can turn one ally into both a body and a finisher setup.");
-  }
-
-  if (effect.includes("pay (2) for each attack")) {
-    addInsight("Best timing", "Use it before an opponent's wide attack turn; taxing every attack is strongest when they planned to swing multiple times.");
-  }
-
-  if (effect.includes("cards in graveyards lose all abilities")) {
-    addInsight("Best timing", "Materialize it before the opponent's graveyard cards become active so their recursion or death-trigger setup never turns on.");
-  }
-
-  if (effect.includes("all activated abilities of distortion regalia")) {
-    addInsight("Creative line", "Treat this like a protected toolbox threat: each Distortion regalia you control gives it more text, while Distortion weapons also raise its power.");
-  }
-
-  if (effect.includes("draw a card into your memory")) {
-    addInsight("Creative line", "Drawing into memory can set up reserve for later turns; if your champion gives agility, memory cards may come back to hand at end phase.");
-  }
-
-  if (effect.includes("prevent") && effect.includes("damage")) {
-    addInsight("Best timing", "Use prevention after the opponent commits damage, forcing them to spend a real card while your unit survives or becomes distant.");
-  }
+  rulesLines.forEach((line) => addRuleLineAdvice(line, addInsight));
 
   if (isRanger && !effect.includes("ranged") && !effect.includes("becomes distant")) {
-    addInsight("Deck fit", "Because this is a Ranger card, it still works with the deck's Ranger support even when it is not your champion class.");
+    addInsight("Deck fit", "Its type line includes Ranger, so it can be chosen by effects that specifically ask for a Ranger card or Ranger unit.");
   }
 
   if (effect.includes("[class bonus]") && !hasActiveClassBonus(card, activeClasses)) {
-    addInsight("Watch out", `Its class bonus is probably off with your current champion class (${joinList(activeClasses) || "unknown"}), so plan around the base text first.`);
+    addInsight("Watch out", `The text has a Class Bonus, but your detected champion class is ${joinList(activeClasses) || "unknown"}. If those classes do not match, ignore the bonus text and plan around the base effect only.`);
   }
 
   if (insights.length === 0) {
-    addInsight("Primary use", "Use this card when its type line and stats fit the current turn: develop threats first, then spend tricks when they change combat or protect damage.");
+    addInsight("Primary use", "Use this card when its type line and stats fit the current turn. No extra rules text was available to infer a more specific line.");
   }
 
-  return insights.slice(0, 4);
+  return insights.slice(0, 6);
+}
+
+function addRuleLineAdvice(line, addInsight) {
+  const lowerLine = line.toLowerCase();
+  const quotedLine = `"${truncateText(line, 150)}"`;
+
+  if (lowerLine.includes("on enter")) {
+    addInsight("Timing", `${quotedLine} means you should play or materialize this when the enter effect immediately matters, not just because you have spare reserve.`);
+  }
+
+  if (lowerLine.includes("ranged")) {
+    addInsight("Use the keyword", `${quotedLine} only improves attacks while the unit is distant, so do not count that bonus unless another effect or game state actually made it distant.`);
+  }
+
+  if (lowerLine.includes("becomes distant")) {
+    addInsight("Setup line", `${quotedLine} is a distance setup effect. Choose the unit whose next attack, defense, or conditional ability is improved by being distant.`);
+  }
+
+  if (lowerLine.includes("wake up")) {
+    addInsight("Sequencing", `${quotedLine} is best after the target has already rested, attacked, defended, or used a rest ability, so the wake effect creates extra value.`);
+  }
+
+  if (lowerLine.includes("suppress")) {
+    addInsight("Target priority", `${quotedLine} temporarily removes a specific problem object. Aim it at the blocker, weapon, regalia, or ally that most affects this turn.`);
+  }
+
+  if (lowerLine.includes("negate")) {
+    addInsight("Hold reserve", `${quotedLine} only matters while the target activation is on the stack. Keep the cost available when you expect a key action.`);
+  }
+
+  if (lowerLine.includes("spellshroud")) {
+    addInsight("Protection", `${quotedLine} stops spell targeting for the turn. Use it before the opponent's spell-based answer resolves, on the unit that matters most.`);
+  }
+
+  if (lowerLine.includes("stealth")) {
+    addInsight("Protection", `${quotedLine} makes attacks harder to point at that ally unless true sight applies, so use it to protect a unit that would otherwise be attacked.`);
+  }
+
+  if (lowerLine.includes("prevent") && lowerLine.includes("damage")) {
+    addInsight("Damage math", `${quotedLine} changes the next damage event described by the card. Wait until the opponent has committed damage so the prevention trades for real effort.`);
+  }
+
+  if (lowerLine.includes("glimpse")) {
+    addInsight("Deck setup", `${quotedLine} lets you control upcoming cards. Put the card you need next on top and move bad reveals to the bottom.`);
+  }
+
+  if (lowerLine.includes("reveal the top card")) {
+    addInsight("Deck setup", `${quotedLine} rewards arranging the top card first. If another line on the card glimpses or filters, sequence that before the reveal.`);
+  }
+
+  if (lowerLine.includes("draw")) {
+    addInsight("Card flow", `${quotedLine} replaces itself or adds resources. Use that extra card before committing to a risky attack line when possible.`);
+  }
+
+  if (lowerLine.includes("draw a card into your memory")) {
+    addInsight("Resource use", `${quotedLine} adds to memory instead of hand, so treat it as future reserve/material for later turns unless another effect returns memory to hand.`);
+  }
+
+  if (lowerLine.includes("banish") && lowerLine.includes("graveyard")) {
+    addInsight("Graveyard timing", `${quotedLine} should be saved for the moment it breaks a graveyard payoff, recursion setup, or element requirement.`);
+  }
+
+  if (lowerLine.includes("cards in graveyards")) {
+    addInsight("Matchup role", `${quotedLine} is matchup text. Bring it out when the opponent's graveyard text or graveyard elements are part of their plan.`);
+  }
+
+  if (lowerLine.includes("banish target ally you control") && lowerLine.includes("return it")) {
+    addInsight("Blink line", `${quotedLine} can save an ally or reuse enter text, but follow the card's return state exactly when planning attacks or blocks.`);
+  }
+
+  if (lowerLine.includes("whenever another unit you control becomes distant")) {
+    addInsight("Trigger setup", `${quotedLine} means you should make a different unit distant first if you want this card to become distant without spending another effect on it.`);
+  }
+
+  if (lowerLine.includes("materialize a ranger regalia")) {
+    addInsight("Material plan", `${quotedLine} trades a random material banish for a Ranger regalia. Use it when that regalia is worth the risk to your remaining material deck.`);
+  }
+
+  if (lowerLine.includes("pay (2) for each attack")) {
+    addInsight("Defensive timing", `${quotedLine} is strongest before a turn with multiple enemy attacks, because every attack declaration becomes more expensive.`);
+  }
+
+  if (lowerLine.includes("activated abilities of distortion regalia")) {
+    addInsight("Build-around", `${quotedLine} depends on which Distortion regalia you actually control, so check those cards before choosing targets or lines.`);
+  }
+
+  if (lowerLine.includes("gets +") || lowerLine.includes("gets +x")) {
+    addInsight("Combat math", `${quotedLine} changes stats for a defined window. Count the exact bonus and duration before declaring attacks or blocks.`);
+  }
+
+  if (lowerLine.includes("costs") && lowerLine.includes("less")) {
+    addInsight("Cost check", `${quotedLine} is conditional cost reduction. Confirm the condition is true before assuming you can hold less reserve open.`);
+  }
+}
+
+function getRulesLines(effectText) {
+  return effectText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function truncateText(text, maxLength) {
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 }
 
 function getActiveChampion(entries) {
