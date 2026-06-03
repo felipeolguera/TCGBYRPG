@@ -64,19 +64,26 @@
 
     <template id="card-template">
       <article class="card">
-        <div class="card__header">
-          <div>
-            <h4></h4>
-            <p class="meta"></p>
+        <div class="card__body">
+          <div class="thumbnail">
+            <img alt="" loading="lazy" />
           </div>
-          <span class="quantity"></span>
+          <div class="card__content">
+            <div class="card__header">
+              <div>
+                <h4></h4>
+                <p class="meta"></p>
+              </div>
+              <span class="quantity"></span>
+            </div>
+            <dl class="stats"></dl>
+            <div class="insights"></div>
+            <details>
+              <summary>Rules text</summary>
+              <p class="rules"></p>
+            </details>
+          </div>
         </div>
-        <dl class="stats"></dl>
-        <p class="role"></p>
-        <details>
-          <summary>Rules text</summary>
-          <p class="rules"></p>
-        </details>
       </article>
     </template>
 

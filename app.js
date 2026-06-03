@@ -374,27 +374,65 @@ function renderCard(entry, activeClasses) {
   const meta = node.querySelector(".meta");
   const quantity = node.querySelector(".quantity");
   const stats = node.querySelector(".stats");
-  const role = node.querySelector(".role");
+  const thumbnail = node.querySelector(".thumbnail img");
+  const insights = node.querySelector(".insights");
   const rules = node.querySelector(".rules");
 
   if (!entry.card) {
     title.textContent = entry.name;
     meta.textContent = "Card not found";
     quantity.textContent = `x${entry.quantity}`;
-    role.textContent = entry.error;
+    thumbnail.removeAttribute("src");
+    thumbnail.alt = "";
+    insights.append(renderInsight("Lookup", entry.error));
     rules.textContent = "";
     return node;
   }
 
   const card = entry.card;
+  const imageUrl = getCardImageUrl(card);
   title.textContent = card.name;
   quantity.textContent = `x${entry.quantity}`;
   meta.textContent = buildMeta(card);
   stats.append(...buildStats(card));
-  role.textContent = explainCard(card, activeClasses);
+  if (imageUrl) {
+    thumbnail.src = imageUrl;
+    thumbnail.alt = `${card.name} card image`;
+  } else {
+    thumbnail.removeAttribute("src");
+    thumbnail.alt = "";
+  }
+  insights.append(...buildCardInsights(card, activeClasses).map(({ label, text }) => renderInsight(label, text)));
   rules.textContent = card.effect_raw || "No rules text.";
 
   return node;
+}
+
+function getCardImageUrl(card) {
+  const imagePath = (card.editions || []).find((edition) => edition.image)?.image;
+
+  if (!imagePath) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(imagePath)) {
+    return imagePath;
+  }
+
+  return `${API_BASE_URL}${imagePath}`;
+}
+
+function renderInsight(label, text) {
+  const wrapper = document.createElement("p");
+  const title = document.createElement("strong");
+  const body = document.createElement("span");
+
+  wrapper.className = "insight";
+  title.textContent = label;
+  body.textContent = text;
+  wrapper.append(title, body);
+
+  return wrapper;
 }
 
 function buildMeta(card) {
@@ -435,72 +473,134 @@ function addStat(stats, label, value) {
   stats.push(wrapper);
 }
 
-function explainCard(card, activeClasses) {
+function buildCardInsights(card, activeClasses) {
   const effect = (card.effect_raw || "").toLowerCase();
   const types = card.types || [];
   const subtypes = card.subtypes || [];
-  const roles = [];
+  const insights = [];
+  const isChampion = types.includes("CHAMPION");
+  const isAlly = types.includes("ALLY");
+  const isRegalia = types.includes("REGALIA");
+  const isAction = types.includes("ACTION");
+  const isRanger = subtypes.includes("RANGER") || (card.classes || []).includes("RANGER");
 
-  if (types.includes("CHAMPION")) {
-    roles.push(`Champion that sets your life total to ${card.life ?? "unknown"} and unlocks ${joinList(card.classes || []) || "its"} class identity.`);
+  const addInsight = (label, text) => {
+    if (!insights.some((insight) => insight.label === label && insight.text === text)) {
+      insights.push({ label, text });
+    }
+  };
+
+  if (isChampion) {
+    addInsight(
+      "Primary use",
+      `Your champion sets the deck's life total to ${card.life ?? "unknown"} and defines which class bonuses are active: ${joinList(card.classes || []) || "none detected"}.`,
+    );
   }
 
-  if (types.includes("ALLY")) {
+  if (isAlly) {
     const body = [card.power, card.life].every((value) => value !== null && value !== undefined)
       ? `${card.power}/${card.life}`
       : "board";
-    roles.push(`${body} ally that gives you a body to attack, defend, or build tricks around.`);
+    addInsight("Primary use", `${body} ally that gives you a board piece to attack, defend, or build combat tricks around.`);
   }
 
-  if (types.includes("REGALIA")) {
-    roles.push("Material deck tool you can access when the matchup or turn calls for it.");
+  if (isRegalia) {
+    addInsight("Primary use", "Material deck tool you can choose when the matchup or current turn calls for its effect.");
   }
 
-  if (types.includes("ITEM") && !types.includes("REGALIA")) {
-    roles.push("Item that stays on board until you cash in its activated effect.");
+  if (types.includes("ITEM") && !isRegalia) {
+    addInsight("Primary use", "Item that can sit on the field until the right turn to cash in its activated effect.");
   }
 
-  if (types.includes("ACTION")) {
-    roles.push(card.speed ? "Fast action you can use reactively or during combat." : "Action for your own proactive turn.");
+  if (isAction) {
+    addInsight("Primary use", card.speed ? "Fast action you can hold up for combat, protection, or a surprise tempo swing." : "Proactive action for your own main turn.");
   }
 
   if (effect.includes("ranged")) {
-    roles.push("Gets much stronger when distant, so pair it with effects that make units distant.");
+    addInsight("Creative line", "Make this unit distant before attacks, then stack pump or wake effects so its Ranged bonus matters more than once.");
   }
 
   if (effect.includes("becomes distant")) {
-    roles.push("Distance enabler that turns on Ranged attackers and can make combat awkward for the opponent.");
+    addInsight("Creative line", "Use it on a Ranger before your attack step, or during the opponent's turn so the unit can survive combat and be distant for your next turn.");
   }
 
   if (effect.includes("wake up")) {
-    roles.push("Wake effect for extra attacks, surprise blocks, or reusing a rested ability.");
+    addInsight("Creative line", "After a distant ally attacks or rests for an ability, wake it to attack again, block, or reuse a key tap/rest effect.");
   }
 
   if (effect.includes("suppress")) {
-    roles.push("Tempo piece that temporarily removes a blocker, item, weapon, or other problem object.");
+    addInsight("Creative line", "Suppress the object that blocks your best attack turn: a defender, a weapon, or a regalia piece that would answer your board.");
   }
 
   if (effect.includes("negate")) {
-    roles.push("Interaction that stops an important opposing action before it resolves.");
+    addInsight("Best timing", "Hold enough reserve for the opponent's highest-impact action, especially removal or a blowout combat trick.");
   }
 
   if (effect.includes("spellshroud") || effect.includes("stealth")) {
-    roles.push("Protection tool for keeping a key ally safe through the opponent's answers.");
+    addInsight("Best timing", "Save this for the ally carrying your damage plan; protecting one distant threat can represent several attacks over two turns.");
   }
 
   if (effect.includes("glimpse") || effect.includes("draw")) {
-    roles.push("Card flow that improves consistency or converts material resources into more options.");
+    addInsight("Creative line", "Use card flow before committing the turn so you can find the missing piece: ally, distance enabler, protection, or wake effect.");
   }
 
   if (effect.includes("banish") && effect.includes("graveyard")) {
-    roles.push("Graveyard hate for matchups that use cards after they leave play.");
+    addInsight("Best timing", "Do not fire graveyard hate too early; wait until it breaks up a recursion turn, element requirement, or graveyard payoff.");
+  }
+
+  if (effect.includes("glimpse") && effect.includes("reveal the top card")) {
+    addInsight("Creative line", "Stack a Wind card on top with glimpse, then reveal it immediately to turn the spell into real card advantage.");
+  }
+
+  if (effect.includes("banish target ally you control") && effect.includes("return it")) {
+    addInsight("Creative line", "Blink your ally to dodge removal, clear damage, or retrigger an On Enter effect; because it returns rested, pair it with wake effects when you still need to attack.");
+  }
+
+  if (effect.includes("whenever another unit you control becomes distant")) {
+    addInsight("Creative line", "Target another unit with your distant effect first so this card turns on for free and gives you a second attacker without spending another card.");
+  }
+
+  if (effect.includes("rest: suppress") || effect.includes("rest]**: suppress")) {
+    addInsight("Creative line", "Make this distant before using the rest ability, then consider waking it afterward so you still get pressure after the suppression.");
+  }
+
+  if (effect.includes("materialize a ranger regalia")) {
+    addInsight("Creative line", "Use this when Ranger Strides or another Ranger regalia is worth the random material banish; it can turn one ally into both a body and a finisher setup.");
+  }
+
+  if (effect.includes("pay (2) for each attack")) {
+    addInsight("Best timing", "Use it before an opponent's wide attack turn; taxing every attack is strongest when they planned to swing multiple times.");
+  }
+
+  if (effect.includes("cards in graveyards lose all abilities")) {
+    addInsight("Best timing", "Materialize it before the opponent's graveyard cards become active so their recursion or death-trigger setup never turns on.");
+  }
+
+  if (effect.includes("all activated abilities of distortion regalia")) {
+    addInsight("Creative line", "Treat this like a protected toolbox threat: each Distortion regalia you control gives it more text, while Distortion weapons also raise its power.");
+  }
+
+  if (effect.includes("draw a card into your memory")) {
+    addInsight("Creative line", "Drawing into memory can set up reserve for later turns; if your champion gives agility, memory cards may come back to hand at end phase.");
+  }
+
+  if (effect.includes("prevent") && effect.includes("damage")) {
+    addInsight("Best timing", "Use prevention after the opponent commits damage, forcing them to spend a real card while your unit survives or becomes distant.");
+  }
+
+  if (isRanger && !effect.includes("ranged") && !effect.includes("becomes distant")) {
+    addInsight("Deck fit", "Because this is a Ranger card, it still works with the deck's Ranger support even when it is not your champion class.");
   }
 
   if (effect.includes("[class bonus]") && !hasActiveClassBonus(card, activeClasses)) {
-    roles.push(`Its class bonus is probably off with your current champion class (${joinList(activeClasses) || "unknown"}).`);
+    addInsight("Watch out", `Its class bonus is probably off with your current champion class (${joinList(activeClasses) || "unknown"}), so plan around the base text first.`);
   }
 
-  return unique(roles).join(" ");
+  if (insights.length === 0) {
+    addInsight("Primary use", "Use this card when its type line and stats fit the current turn: develop threats first, then spend tricks when they change combat or protect damage.");
+  }
+
+  return insights.slice(0, 4);
 }
 
 function getActiveChampion(entries) {
